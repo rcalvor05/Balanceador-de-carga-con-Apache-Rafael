@@ -122,7 +122,9 @@ $db_name = "app_balanceador";`
 
 2º Creamos un archivo nuevo
 `sudo nano /var/www/html/index.php`
-`<?php
+
+``<?php
+
 require '/var/www/config.php';
 
 $servidor = gethostname();
@@ -163,7 +165,7 @@ try {
         <?php endwhile; ?>
     </table>
 </body>
-</html>`
+</html>``
 
 
 Descargamos curl ya que en la imagen de debian que usa vagrant no viene descargado.
