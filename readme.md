@@ -165,8 +165,8 @@ try {
         <?php endwhile; ?>
     </table>
 </body>
-</html>```
-
+</html>
+```
 
 Descargamos curl ya que en la imagen de debian que usa vagrant no viene descargado.
 `sudo apt install -y curl`
