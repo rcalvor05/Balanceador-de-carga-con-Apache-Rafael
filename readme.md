@@ -372,6 +372,7 @@ sudo ufw status verbose
 
 **Status web1**
 ![statusweb1](/img/stweb1.png)
+
 **Status web2**
 ![statusweb2](/img/stweb2.png)
 
