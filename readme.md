@@ -175,3 +175,224 @@ Ahora comprobamos desde cada web
 `curl -s localhost | grep respondido`
 ![resweb1](/img/resweb1.png)
 ![resweb2](/img/resweb2.png)
+
+Hacemos la prueba desde el balanceador
+`sudo apt install -y curl`
+`curl -s 10.10.1.11 | grep respondido`
+`curl -s 10.10.1.12 | grep respondido`
+![balanceadores](/img/balanceador.png)
+
+
+## Configuración Balanceador
+
+### Instalamos Apache y activamos los modulos de balanceo
+`sudo apt install -y apache2`
+`sudo a2enmod proxy proxy_http proxy_balancer lbmethod_byrequests`
+
+### Creamos la configuración del balanceador
+Creamos un nuevo archivo
+`sudo nano /etc/apache2/sites-available/balanceador.conf`
+
+```
+<VirtualHost *:80>
+    ServerName localhost
+
+    <Proxy "balancer://webs">
+        BalancerMember "http://10.10.1.11"
+        BalancerMember "http://10.10.1.12"
+        ProxySet lbmethod=byrequests
+    </Proxy>
+
+    ProxyPreserveHost On
+    ProxyPass        "/" "balancer://webs/"
+    ProxyPassReverse "/" "balancer://webs/"
+
+    ErrorLog ${APACHE_LOG_DIR}/balanceador_error.log
+    CustomLog ${APACHE_LOG_DIR}/balanceador_access.log combined
+</VirtualHost>
+```
+
+### Activamos el sitio
+`sudo a2dissite 000-default`
+
+`sudo a2ensite balanceador`
+
+`sudo apache2ctl configtest`
+
+`sudo systemctl reload apache2`
+
+### Comprobación
+
+Hacemos 4 peticiones en el balanceador
+`for i in 1 2 3 4; do curl -s localhost | grep respondido; done`
+
+Entramos desde nuestro navegador en esta dirección `http://192.168.18.57`
+
+![respuestas web](/img/respon.png)
+
+### IP fija para el balanceador
+
+Elegiremos la ip 192.168.18.200
+
+Haremos un ping para comprobar que nadie la esta usando
+
+`ping -c 2 192.168.18.200` nos deberá 100% packet loss para comprobar que nadie tiene esta ip
+
+En el vagrantfile cambiamos esta linea
+`b.vm.network "public_network", bridge: ENV["BRIDGE_IF"]`
+por esta
+
+`b.vm.network "public_network", bridge: ENV["BRIDGE_IF"], ip: "192.168.18.200"`
+
+Reiniciamos la maquina del balanceador
+`vagrant reload balanceador`
+
+Volvemos a entrar en la maquina y comprobamos con `ip -br a` si se cambio
+![ipcorrecta](/img/ipcorrecta.png)
+
+### Descargamos Cerbot
+Pondremos este comando `sudo apt install -y certbot python3-certbot-apache`
+
+Comprobaremos la instalación `cerbot --version`
+![certbot](/img/certbot.png)
+
+### Subdominio DuckDNS
+
+Entraremos en esta web [DuckDNS](https://www.duckdns.org/)
+![DuckDNS](/img/duckdns.png)
+Iniciamos sesión y escribimos nuestro subdominio
+![subdominio](/img/subdominio.png)
+Nos saldrá nuestra IP publica la borramos y la cambiamos por 192.168.18.200
+![ipupdate](/img/ipupdate.png)
+Comprobamos que funciona
+`ping -c 2 rafaelcalvobalanceador.duckdns.org`
+![ping](pingduck.png)
+
+
+### Pedir certificado
+En el terminal del balanceador pondremos los siguientes comandos
+`sudo apt install -y dnsutils`
+`sudo certbot certonly --manual --preferred-challenges dns -d rafaelcalvobalanceador.duckdns.org`
+
+Te pedira un correo para avisarte cuando caduca el certifcado, Y, N, se para y te muestra un valor para el registro, abriremos otro terminal
+
+Entramos con `vagrant ssh balanceador` y pondremos
+`curl "https://www.duckdns.org/update?domains=rafaelcalvobalanceador&token=TU_TOKEN&txt=VALOR"`
+
+Cambiando TU_TOKEN y VALOR, si todo esta bien te deberá responder con un OK luego de eso pondremos este comando 
+`dig +short TXT _acme-challenge.rafaelcalvobalanceador.duckdns.org @ns1.duckdns.org`
+
+Te responderá el valor entre comillas, cuando esto pase volvemos al terminal de cerbot y pulsamos `Enter`
+![cerbot](/img/cerbot.png)
+
+### Configuración Apache HTTPS
+
+Activamos el modulo SSL
+`sudo a2enmod ssl`
+
+Cambiamos la configuración del balanceador
+`sudo nano /etc/apache2/sites-available/balanceador.conf`
+
+```
+<VirtualHost *:80>
+    ServerName rafaelcalvobalanceador.duckdns.org
+    Redirect permanent / https://rafaelcalvobalanceador.duckdns.org/
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName rafaelcalvobalanceador.duckdns.org
+
+    SSLEngine on
+    SSLCertificateFile    /etc/letsencrypt/live/rafaelcalvobalanceador.duckdns.org/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/rafaelcalvobalanceador.duckdns.org/privkey.pem
+
+    <Proxy "balancer://webs">
+        BalancerMember "http://10.10.1.11"
+        BalancerMember "http://10.10.1.12"
+        ProxySet lbmethod=byrequests
+    </Proxy>
+
+    ProxyPreserveHost On
+    ProxyPass        "/" "balancer://webs/"
+    ProxyPassReverse "/" "balancer://webs/"
+
+    ErrorLog ${APACHE_LOG_DIR}/balanceador_error.log
+    CustomLog ${APACHE_LOG_DIR}/balanceador_access.log combined
+</VirtualHost>
+```
+
+Lo aplicamos
+
+`sudo apache2ctl configtest`
+`sudo systemctl reload apache2`
+
+Lo comprobamos
+`curl -sI http://localhost | head -n 3`
+![permanente](/img/permanente.png)
+
+En el navegador
+![web1](/img/seguro.png)
+
+
+## Cortafuegos de la BBDD
+
+Instalamos ufw
+`sudo apt install -y ufw`
+
+Pondremos las politicas por defecto
+`sudo ufw default deny incoming`
+`sudo ufw default allow outgoing`
+
+
+Abrimos el puerto SSH para las conexiones
+`sudo ufw allow in on eth0 to any port 22 proto tcp`
+Permitimos la conexión de las webs
+`sudo ufw allow in on eth1 from 10.10.2.0/24 to any port 3306 proto tcp`
+
+
+Activamos el cortafuegos y comprobamos
+`sudo ufw enable`
+`sudo ufw status verbose`
+![ufw](/img/ufw.png)
+Entramos desde web1
+`mariadb -h 10.10.2.20 -u usuario_web -p -e "SHOW TABLES FROM app_balanceador;"`
+![conecta](/img/conecta.png)
+
+### Cortafuegos Web1 y Web2
+**SE CONFIGURA EN LAS 2 TERMINALES**
+```
+sudo apt install -y ufw
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow in on eth0 to any port 22 proto tcp
+sudo ufw allow in on eth1 from 10.10.1.10 to any port 80 proto tcp
+sudo ufw enable
+sudo ufw status verbose
+```
+
+**Status web1**
+![statusweb1](/img/stweb1.png)
+**Status web2**
+![statusweb2](/img/stweb2.png)
+
+Todo debe seguir funcionando de forma correcta pero debe fallar esto
+`curl -m 5 10.10.1.11` en web2 pedirle la página de web1
+![falla](/img/falla.png)
+
+### Cortafuegos del Balanceador
+```
+sudo apt install -y ufw
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow in on eth0 to any port 22 proto tcp
+sudo ufw allow in on eth1 to any port 80 proto tcp
+sudo ufw allow in on eth1 to any port 443 proto tcp
+sudo ufw enable
+sudo ufw status verbose
+```
+![statusb](/img/statusb.png)
+Todo debé funcionar como antes pero ahora no dejará entrar por ssh a el balanceador por su ip
+`ssh -o ConnectTimeout=5 vagrant@192.168.18.200`
+![ssh error](/img/ssh.png)
+
+Aquí hay un video probando el funcionamiento de todo [video](https://youtu.be/VcqZOSquvg8)
