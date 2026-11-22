@@ -54,3 +54,20 @@ Cambiamos la ip de localhost por esta `10.10.2.20`
 
 Hacemos la comprobación de que ha funcionado
 ![Testmariadb](/img/test.png)
+
+En el terminal ponemos `sudo mariadb` dentro ejecutamos esto, cambiamos los asteriscos por una clave real
+`CREATE DATABASE app_balanceador;`
+
+`CREATE USER 'usuario_web'@'10.10.2.%' IDENTIFIED BY '********';`
+`GRANT SELECT, INSERT ON app_balanceador.* TO 'usuario_web'@'10.10.2.%';`
+`FLUSH PRIVILEGES;`
+`USE app_balanceador;`
+`CREATE TABLE visitas (`
+`    id INT AUTO_INCREMENT PRIMARY KEY,`
+`    servidor VARCHAR(50) NOT NULL,`
+`    fecha DATETIME DEFAULT CURRENT_TIMESTAMP`
+`);`
+`EXIT;`
+Comprobamos que todo esta en orden con este comando `sudo mariadb -e "SELECT user, host FROM mysql.user; SHOW TABLES FROM app_balanceador;"`
+![goodmdb](/img/good.png)
+
